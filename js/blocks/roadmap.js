@@ -5,11 +5,19 @@ let filterMode = 'all';
 let selectedScriptPath = 'Assets/_Project/Scripts/Vehicles/RaycastVehicle.cs';
 const openNotes = new Set();
 
+function modelBadgeClass(tier) {
+  if (tier === 'fast') return 'badge-cyan';
+  if (tier === 'heavy') return 'badge-accent';
+  if (tier === 'cloud') return 'badge-red';
+  return '';
+}
+
 export function renderRoadmapBlock(container, { roadmap }) {
   const allTasks = roadmap.phases.flatMap(p => p.tasks);
   const doneCount = allTasks.filter(t => store.getTask(t.id).done).length;
   const pct = Math.round((doneCount / Math.max(1, allTasks.length)) * 100);
   const selectedScript = roadmap.unityTree.find(s => s.path === selectedScriptPath) || roadmap.unityTree[0];
+  const aiModels = roadmap.aiModels || [];
 
   container.innerHTML = `
     <div class="block-stack">
@@ -23,6 +31,26 @@ export function renderRoadmapBlock(container, { roadmap }) {
         </div>
         <div class="bar-track mb-1" style="height:12px;"><div class="bar-fill" style="width:${pct}%;background:var(--green);"></div></div>
         <div class="grid-4 mt-2">${roadmap.goldRules.map(r => `<div class="card"><strong class="small" style="color:var(--accent);">${escapeHtml(r.title)}</strong><div class="small muted mt-1">${escapeHtml(r.desc)}</div></div>`).join('')}</div>
+
+        ${aiModels.length ? `
+          <div class="mt-2" style="border-top:1px solid var(--border); padding-top:1rem;">
+            <div class="flex-between mb-1">
+              <strong class="small">Локальные модели LM Studio (RTX 5070 12 ГБ + 32 ГБ ОЗУ)</strong>
+              <span class="mono small muted">Flash Attention ON · KV Cache Q8_0 · Temp 0.2</span>
+            </div>
+            <div class="grid-3">
+              ${aiModels.map(m => `
+                <div class="card" style="background:var(--bg-input);">
+                  <div class="flex-between mb-1">
+                    <span class="badge ${modelBadgeClass(m.tier)}">${escapeHtml(m.name)}</span>
+                  </div>
+                  <div class="mono" style="font-size:0.72rem; color:var(--text-dim);">${escapeHtml(m.vram)}</div>
+                  <div class="small muted mt-1">${escapeHtml(m.role)}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
       </section>
 
       <section class="block">
@@ -41,7 +69,7 @@ export function renderRoadmapBlock(container, { roadmap }) {
             ${list.map(t => {
               const st = store.getTask(t.id);
               const showNote = openNotes.has(t.id) || (st.note && st.note.trim().length > 0);
-              return `<div class="task-item ${st.done ? 'done' : ''}"><div class="task-top"><label class="task-check"><input type="checkbox" data-toggle-task="${t.id}" ${st.done ? 'checked' : ''} /><div><div class="task-title"><strong>${t.id}. ${escapeHtml(t.title)}</strong></div><div class="small muted">${escapeHtml(t.desc)}</div><div class="flex-gap mt-1">${t.files.map(f => `<span class="badge mono">${escapeHtml(f)}</span>`).join('')}<span class="badge badge-green">DoD: ${escapeHtml(t.dod)}</span></div></div></label><div class="flex-gap"><button class="btn btn-sm" data-toggle-note="${t.id}">Заметка</button><button class="btn btn-sm btn-accent" data-copy-prompt="${t.id}" data-phase-id="${phase.id}">Промпт ИИ</button></div></div>
+              return `<div class="task-item ${st.done ? 'done' : ''}"><div class="task-top"><label class="task-check"><input type="checkbox" data-toggle-task="${t.id}" ${st.done ? 'checked' : ''} /><div><div class="task-title"><strong>${t.id}. ${escapeHtml(t.title)}</strong></div><div class="small muted">${escapeHtml(t.desc)}</div><div class="flex-gap mt-1">${t.model ? `<span class="badge ${modelBadgeClass(t.modelTier)}" title="${escapeHtml(t.modelReason || '')}">ИИ: ${escapeHtml(t.model)}</span>` : ''}${t.files.map(f => `<span class="badge mono">${escapeHtml(f)}</span>`).join('')}<span class="badge badge-green">DoD: ${escapeHtml(t.dod)}</span></div></div></label><div class="flex-gap"><button class="btn btn-sm" data-toggle-note="${t.id}">Заметка</button><button class="btn btn-sm btn-accent" data-copy-prompt="${t.id}" data-phase-id="${phase.id}">Промпт ИИ</button></div></div>
               ${showNote ? `<div class="task-note-box"><div class="flex-between mb-1"><span class="small muted">Заметка (подмешивается в промпт):</span>${st.updatedBy ? `<span class="mono" style="font-size:0.7rem;color:var(--text-dim);">изм.: ${escapeHtml(st.updatedBy)}</span>` : ''}</div><textarea rows="2" placeholder="Баги в Unity, правки для ИИ..." data-note-input="${t.id}">${escapeHtml(st.note || '')}</textarea></div>` : ''}</div>`;
             }).join('')}</div>`;
         }).join('')}
