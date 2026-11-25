@@ -1,0 +1,391 @@
+{
+  "cursorrules": "# SYSTEM RULES — ЭКСПЕДИЦИЯ №2 (Unity + FishNet)\n1. Движок: Unity 6 / 2022.3 LTS (URP), C# 9+, новая Input System.\n2. Сеть: FishNet (Host-Client P2P через FishySteamworks). Никаких Mirror/Photon.\n3. ФИЗИКА АВТО: СТРОГО кастомный RaycastVehicle (4 рейкаста). ЗАПРЕЩЕНО использовать Unity WheelCollider!\n4. СТЫКОВКА И ПРИЦЕПЫ: Разведчик на платформе -> isKinematic = true + SetParent. Отцепленный прицеп на лапах -> isKinematic = true. Сцепка -> 1 ConfigurableJoint в FifthWheelAnchor (±70° по Y). Интерьер -> BaseModule в InteriorSlot.\n5. РЕСУРСЫ: IRecyclable + ScrapProfileSO -> 4 int (Metal, Rubber, Copper, Alloy) в TruckResourceStorage.\n6. ЧЕРТЕЖИ: CraftingRecipeSO + BlueprintManager (SyncHashSet<string> на хосте).\n7. ГРЯЗЬ И ПОГОДА: Terrain Splatmap (без деформации меша). WeatherManager синхронизирует WeatherType, float intensity, float phaseTimer.\n8. ФОРМАТ ОТВЕТА ИИ: Полные компилируемые C#-файлы с путями Assets/_Project/Scripts/... + инструкция сборки префаба в Inspector.",
+  "goldRules": [
+    {
+      "title": "Никаких WheelCollider",
+      "desc": "Только кастомный RaycastVehicle — стабилен в сети и не улетает на кочках."
+    },
+    {
+      "title": "isKinematic при стыковке",
+      "desc": "Машина на платформе и прицеп на лапах переходят в isKinematic = true."
+    },
+    {
+      "title": "4 числа вместо россыпи",
+      "desc": "Бункер хранит 4 int, а стеллажи — массивы ID внутри BaseModule."
+    },
+    {
+      "title": "Грязь через Splatmap",
+      "desc": "Вязкость читается с карты террейна без сетевой деформации меша."
+    }
+  ],
+  "phases": [
+    {
+      "id": "phase0",
+      "code": "ЭТАП 0",
+      "title": "Инфраструктура, сеть и базовый транспорт",
+      "goal": "2 игрока подключаются, ходят пешком и ездят на рейкаст-машине.",
+      "tasks": [
+        {
+          "id": "0.1",
+          "title": "Unity URP + FishNet + Input System",
+          "files": [
+            "NetworkBootstrap.cs",
+            "GameLayers.cs"
+          ],
+          "desc": "Слои (Vehicle, Terrain, Interactable, Module), FishNet и FishySteamworks.",
+          "dod": "2 клиента в ParrelSync видят друг друга."
+        },
+        {
+          "id": "0.2",
+          "title": "FPS-контроллер игрока и IInteractable",
+          "files": [
+            "PlayerController.cs",
+            "PlayerInteraction.cs",
+            "IInteractable.cs"
+          ],
+          "desc": "Ходьба, луч E, перенос физических объектов в руках.",
+          "dod": "Игроки передают ящик из рук в руки без рывков."
+        },
+        {
+          "id": "0.3",
+          "title": "RaycastVehicle + бездорожье (Splatmap)",
+          "files": [
+            "RaycastVehicle.cs",
+            "WheelSuspensionPoint.cs",
+            "SurfaceFrictionReader.cs"
+          ],
+          "desc": "4 рейкаста, кривая момента, чтение грязи/льда, посадка за руль.",
+          "dod": "Машина стабильно едет по кочкам и вязнет в грязи."
+        }
+      ]
+    },
+    {
+      "id": "phase1",
+      "code": "ЭТАП 1",
+      "title": "Ядро: Модульная машина, база и стыковка (MVP)",
+      "goal": "Собираем легковушку из узлов, крепим её на грузовик и едем к тупику.",
+      "tasks": [
+        {
+          "id": "1.1",
+          "title": "Сокеты MountPoint и сменные кузова",
+          "files": [
+            "ModularVehicle.cs",
+            "MountPoint.cs",
+            "VehiclePartSO.cs",
+            "BoltInteractable.cs"
+          ],
+          "desc": "Кузов с сокетами, затяжка 2–4 болтов гайковёртом, пересчёт статов.",
+          "dod": "Незакрученное колесо отваливается через 100–150 м."
+        },
+        {
+          "id": "1.2",
+          "title": "Стартовая платформа Vehicle_Dock",
+          "files": [
+            "VehicleDockStation.cs",
+            "RampController.cs"
+          ],
+          "desc": "Аппарель и строповка: isKinematic = true + SetParent к базе.",
+          "dod": "Грузовик с кей-каром проходит серпантин без дрожи."
+        },
+        {
+          "id": "1.3",
+          "title": "Фундамент модулей (BaseModule и InteriorSlot)",
+          "files": [
+            "BaseModule.cs",
+            "InteriorSlot.cs",
+            "StorageRackModule.cs"
+          ],
+          "desc": "Переносимые модули интерьера и валидация SlotSize.",
+          "dod": "Стеллаж фиксируется в слоте и хранит детали."
+        }
+      ]
+    },
+    {
+      "id": "phase2",
+      "code": "ЭТАП 2",
+      "title": "Экономика: Шлак, шредер, станок и чертежи",
+      "goal": "Сбор хлама → переработка → чертёж → крафт детали.",
+      "tasks": [
+        {
+          "id": "2.1",
+          "title": "IRecyclable и физический шредер",
+          "files": [
+            "IRecyclable.cs",
+            "ScrapProfileSO.cs",
+            "ShredderModule.cs",
+            "TruckResourceStorage.cs"
+          ],
+          "desc": "Переработка в воронке в 4 int с учётом КПД.",
+          "dod": "Сброшенный хлам пополняет 4 счётчика бункера у всех."
+        },
+        {
+          "id": "2.2",
+          "title": "Чертежи, доска знаний и обратная инженерия",
+          "files": [
+            "BlueprintManager.cs",
+            "BlueprintPickup.cs",
+            "BlueprintBoardModule.cs"
+          ],
+          "desc": "SyncHashSet открытых рецептов, фрагменты и разбор редких деталей.",
+          "dod": "Приколотый чертёж сразу открывается всей команде."
+        },
+        {
+          "id": "2.3",
+          "title": "Станок, рецепты и генератор базы",
+          "files": [
+            "CraftingRecipeSO.cs",
+            "WorkbenchModule.cs",
+            "BaseGeneratorModule.cs"
+          ],
+          "desc": "Крафт по таймеру со списанием ресурсов и топлива генератора.",
+          "dod": "Скрафченные цепи появляются на лотке и ставятся на авто."
+        },
+        {
+          "id": "2.4",
+          "title": "Полевой ремонт под капотом и Toolbox",
+          "files": [
+            "EngineBayRepair.cs",
+            "ToolboxContainer.cs"
+          ],
+          "desc": "Триггеры свечей/реле при открытом капоте + ящик инструментов.",
+          "dod": "Напарник привозит реле и за 5 сек чинит разведчик."
+        }
+      ]
+    },
+    {
+      "id": "phase3",
+      "code": "ЭТАП 3",
+      "title": "Тягач, сменные прицепы, переезд и лебёдка",
+      "goal": "Разделение базы на тягач и прицепы, кооп-переезд и лебёдка.",
+      "tasks": [
+        {
+          "id": "3.1",
+          "title": "Сцепка тягача с прицепом (ConfigurableJoint)",
+          "files": [
+            "TractorHitch.cs",
+            "TrailerChassis.cs"
+          ],
+          "desc": "Седло FifthWheelAnchor (±70°) и опорные лапы (isKinematic = true).",
+          "dod": "Тягач отцепляет прицеп в лагере и цепляет другой."
+        },
+        {
+          "id": "3.2",
+          "title": "Перенос BaseModule и шланг перекачки",
+          "files": [
+            "ModuleAnchorBolts.cs",
+            "ResourceTransferHose.cs"
+          ],
+          "desc": "4 анкера у модулей и перегонка бункера по шлангу.",
+          "dod": "Полный переезд в Штаб Конвоя №1 за 5 минут."
+        },
+        {
+          "id": "3.3",
+          "title": "Кооп-лебёдка, буксировка и кран",
+          "files": [
+            "WinchSystem.cs",
+            "CraneController.cs"
+          ],
+          "desc": "Трос между машинами/деревьями и кран-манипулятор на тягаче.",
+          "dod": "Пикап вытаскивает кей-кар, кран грузит V8."
+        },
+        {
+          "id": "3.4",
+          "title": "Специализация автопарка (4 кузова)",
+          "files": [
+            "ChassisCatalogSO.cs"
+          ],
+          "desc": "Баланс Кей-кара, Пикапа, Багги и Фургона с реальным весом груза.",
+          "dod": "Перегруз кей-кара >120 кг просаживает подвеску."
+        }
+      ]
+    },
+    {
+      "id": "phase4",
+      "code": "ЭТАП 4",
+      "title": "Погодные аномалии и метеорадар",
+      "goal": "Погода как динамическое инженерное испытание.",
+      "tasks": [
+        {
+          "id": "4.1",
+          "title": "Сетевой WeatherManager и радар",
+          "files": [
+            "WeatherManager.cs",
+            "AnomalyProfileSO.cs",
+            "WeatherRadarDisplay.cs"
+          ],
+          "desc": "Синхронизация 3 параметров + предвестник на барометре за 3–5 мин.",
+          "dod": "Все клиенты синхронно видят шторм на приборах и URP Volume."
+        },
+        {
+          "id": "4.2",
+          "title": "Физика 5 аномалий и анти-аномальный обвес",
+          "files": [
+            "EmpInterference.cs",
+            "ThermalEngineSim.cs",
+            "AnomalyWindZone.cs"
+          ],
+          "desc": "Паводок, ЭМИ, шквал (0.5G), гололёд и термальная волна.",
+          "dod": "Инжектор глохнет в ЭМИ без сетки; багги перелетает обрыв в шквал."
+        }
+      ]
+    },
+    {
+      "id": "phase5",
+      "code": "ЭТАП 5",
+      "title": "Сюжет Конвоя №1, цели и 4 биома",
+      "goal": "Цельная кампания с видимым изменением мира.",
+      "tasks": [
+        {
+          "id": "5.1",
+          "title": "QuestManager и пробковая карта",
+          "files": [
+            "QuestManager.cs",
+            "ObjectiveSO.cs",
+            "CorkboardMapUI.cs"
+          ],
+          "desc": "Deliver, Switch, Tow, Reach + физическая карта в прицепе.",
+          "dod": "Запуск подстанции зажигает фонари города и открывает ворота."
+        },
+        {
+          "id": "5.2",
+          "title": "Магнитофон, кассеты и рация",
+          "files": [
+            "CassettePlayer.cs",
+            "RadioQueueManager.cs"
+          ],
+          "desc": "Кассеты Конвоя №1 без наложения дорожек + шумовой фильтр рации.",
+          "dod": "Кассета проигрывается в базе синхронно для всех."
+        },
+        {
+          "id": "5.3",
+          "title": "4 акта, база Конвоя №1 и финал",
+          "files": [
+            "SectorTransitionManager.cs",
+            "FinalChoiceController.cs"
+          ],
+          "desc": "4 сектора, перевёрнутый грузовик в 3 акте и финальный выбор.",
+          "dod": "Кампания проходится от КПП до финального рубильника."
+        }
+      ]
+    },
+    {
+      "id": "phase6",
+      "code": "ЭТАП 6",
+      "title": "Полировка, сохранения, войсчат и Steam",
+      "goal": "Стабильный релизный билд под Steam Next Fest.",
+      "tasks": [
+        {
+          "id": "6.1",
+          "title": "Save/Load мира, прицепов и автопарка",
+          "files": [
+            "SaveSystem.cs",
+            "WorldSaveData.cs"
+          ],
+          "desc": "Сериализация машин, BaseModule, бункера, чертежей и актов на хосте.",
+          "dod": "После рестарта колонна и стеллажи восстанавливаются 1-в-1."
+        },
+        {
+          "id": "6.2",
+          "title": "Proximity Voice Chat + фильтр рации",
+          "files": [
+            "ProximityVoiceBridge.cs"
+          ],
+          "desc": "3D-голос рядом и шипение рации дальше 40 метров.",
+          "dod": "В кузове чистый голос, на дистанции — рация."
+        },
+        {
+          "id": "6.3",
+          "title": "Steam Lobby, LOD/Occlusion и плейтест",
+          "files": [
+            "SteamLobbyManager.cs",
+            "PerformanceProfilerConfig.cs"
+          ],
+          "desc": "Инвайты Steam, оптимизация LOD, тест на 4 игроков.",
+          "dod": "Стабильные 60+ FPS в коопе на 4 игроков."
+        }
+      ]
+    }
+  ],
+  "unityTree": [
+    {
+      "path": "Assets/_Project/Scripts/Core/NetworkBootstrap.cs",
+      "layer": "Core",
+      "contract": "Инициализация FishNet + FishySteamworks, P2P-лобби, спавн игроков."
+    },
+    {
+      "path": "Assets/_Project/Scripts/Player/PlayerController.cs",
+      "layer": "Player",
+      "contract": "FPS-контроллер с предсказанием: Пешком / За рулём / За краном."
+    },
+    {
+      "path": "Assets/_Project/Scripts/Player/PlayerInteraction.cs",
+      "layer": "Player",
+      "contract": "Луч взаимодействия E, перенос BaseModule/деталей, гайковёрт."
+    },
+    {
+      "path": "Assets/_Project/Scripts/Vehicles/RaycastVehicle.cs",
+      "layer": "Vehicles",
+      "contract": "4 рейкаста (БЕЗ WheelCollider), момент, понижайка, блокировка."
+    },
+    {
+      "path": "Assets/_Project/Scripts/Vehicles/SurfaceFrictionReader.cs",
+      "layer": "Vehicles",
+      "contract": "Чтение Terrain Splatmap под колесом: трение, вязкость грязи."
+    },
+    {
+      "path": "Assets/_Project/Scripts/Vehicles/ModularVehicle.cs",
+      "layer": "Vehicles",
+      "contract": "Массив MountPoint, пересчёт массы, мощности, охлаждения и ЭМИ."
+    },
+    {
+      "path": "Assets/_Project/Scripts/Vehicles/MountPoint.cs",
+      "layer": "Vehicles",
+      "contract": "Сокет кузова + BoltInteractable; срыв детали без затяжки болтов."
+    },
+    {
+      "path": "Assets/_Project/Scripts/Base/TractorHitch.cs",
+      "layer": "Base",
+      "contract": "ConfigurableJoint на хосте в FifthWheelAnchor (±70° по Y)."
+    },
+    {
+      "path": "Assets/_Project/Scripts/Base/TrailerChassis.cs",
+      "layer": "Base",
+      "contract": "Пассивный рейкаст-прицеп; на лапах переходит в isKinematic = true."
+    },
+    {
+      "path": "Assets/_Project/Scripts/Base/BaseModule.cs",
+      "layer": "Base",
+      "contract": "Переносимое оборудование с GUID, 4 анкерами и сериализацией."
+    },
+    {
+      "path": "Assets/_Project/Scripts/Base/InteriorSlot.cs",
+      "layer": "Base",
+      "contract": "Валидатор SlotSize внутри прицепа; фиксация Transform без Rigidbody."
+    },
+    {
+      "path": "Assets/_Project/Scripts/Economy/TruckResourceStorage.cs",
+      "layer": "Economy",
+      "contract": "Бункер на хосте (4 int) + API перекачки по шлангу."
+    },
+    {
+      "path": "Assets/_Project/Scripts/Economy/ShredderModule.cs",
+      "layer": "Economy",
+      "contract": "Триггер воронки принимает IRecyclable, применяет КПД, пополняет бункер."
+    },
+    {
+      "path": "Assets/_Project/Scripts/Economy/BlueprintManager.cs",
+      "layer": "Economy",
+      "contract": "SyncHashSet<string> открытых рецептов, фрагменты, обратная инженерия."
+    },
+    {
+      "path": "Assets/_Project/Scripts/Weather/WeatherManager.cs",
+      "layer": "Weather",
+      "contract": "Синхронизация WeatherType/intensity/timer, URP Volume, физика штормов."
+    },
+    {
+      "path": "Assets/_Project/Scripts/Story/QuestManager.cs",
+      "layer": "Story",
+      "contract": "ObjectiveSO, пробковая карта, очередь кассет и смена мира."
+    }
+  ]
+}
